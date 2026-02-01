@@ -58,7 +58,6 @@ func main() {
 	}
 	fmt.Printf("密文 (Base64): %s\n", encryptedData.Ciphertext)
 	fmt.Printf("Nonce (Base64): %s\n", encryptedData.Nonce)
-	fmt.Printf("Tag (Base64): %s\n", encryptedData.Tag)
 
 	// AES-GCM 解密
 	decrypted2, err := crypto.AESGCMDecrypt(aesKey, encryptedData)

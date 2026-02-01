@@ -64,7 +64,6 @@ class MainActivity : AppCompatActivity() {
                 
                 textView.append("密文 (Base64): ${encryptedData.ciphertext}\n")
                 textView.append("Nonce (Base64): ${encryptedData.nonce}\n")
-                textView.append("Tag (Base64): ${encryptedData.tag}\n")
                 
                 val decrypted2 = CryptoLib.aesGCMDecrypt(aesKey, encryptedData)
                 if (decrypted2 != null) {

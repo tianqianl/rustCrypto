@@ -1,15 +1,17 @@
 package crypto
 
 /*
-#cgo CFLAGS: -I../../../include
-#cgo darwin,amd64 LDFLAGS: -L../../../target/release -lcrypto_lib -Wl,-rpath,../../target/release
-#cgo darwin,arm64 LDFLAGS: -L../../../target/release -lcrypto_lib -Wl,-rpath,../../target/release
-#cgo linux LDFLAGS: -L../../../target/release -lcrypto_lib
+#cgo windows LDFLAGS: -L. -lcrypto_lib -lbcrypt -lntdll -ladvapi32 -lws2_32 -luserenv
+#cgo darwin,amd64 LDFLAGS: -L. -lcrypto_lib -Wl,-rpath,.
+#cgo darwin,arm64 LDFLAGS: -L. -lcrypto_lib -Wl,-rpath,.
+#cgo linux LDFLAGS: -L. -lcrypto_lib
+#cgo CFLAGS: -I.
 
 #include "crypto.h"
 #include <stdlib.h>
 */
 import "C"
+
 import (
 	"fmt"
 	"unsafe"
@@ -25,7 +27,6 @@ type KeyPair struct {
 type EncryptedData struct {
 	Ciphertext string
 	Nonce      string
-	Tag        string
 }
 
 // GenerateRSAKeyPair generates a new RSA key pair with the specified bit length
@@ -126,7 +127,6 @@ func AESGCMEncrypt(key []byte, plaintext []byte) (*EncryptedData, error) {
 	return &EncryptedData{
 		Ciphertext: C.GoString(cResult.ciphertext),
 		Nonce:      C.GoString(cResult.nonce),
-		Tag:        C.GoString(cResult.tag),
 	}, nil
 }
 
@@ -138,15 +138,12 @@ func AESGCMDecrypt(key []byte, encrypted *EncryptedData) ([]byte, error) {
 
 	cCiphertext := C.CString(encrypted.Ciphertext)
 	cNonce := C.CString(encrypted.Nonce)
-	cTag := C.CString(encrypted.Tag)
 	defer C.free(unsafe.Pointer(cCiphertext))
 	defer C.free(unsafe.Pointer(cNonce))
-	defer C.free(unsafe.Pointer(cTag))
 
 	cEncrypted := &C.struct_CEncryptedData{
 		ciphertext: cCiphertext,
 		nonce:      cNonce,
-		tag:        cTag,
 	}
 
 	var outLen C.size_t

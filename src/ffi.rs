@@ -3,6 +3,7 @@ use std::ffi::{CStr, CString};
 use std::ptr;
 use std::slice;
 use crate::crypto::{CryptoEngine, EncryptedData};
+use crate::ecc::EccEngine;
 
 #[repr(C)]
 pub struct CKeyPair {
@@ -14,7 +15,6 @@ pub struct CKeyPair {
 pub struct CEncryptedData {
     pub ciphertext: *mut c_char,
     pub nonce: *mut c_char,
-    pub tag: *mut c_char,
 }
 
 #[repr(C)]
@@ -131,12 +131,10 @@ pub extern "C" fn crypto_aes_gcm_encrypt(
         Ok(encrypted) => {
             let ciphertext = CString::new(encrypted.ciphertext).unwrap().into_raw();
             let nonce = CString::new(encrypted.nonce).unwrap().into_raw();
-            let tag = CString::new(encrypted.tag).unwrap().into_raw();
-            
+
             Box::into_raw(Box::new(CEncryptedData {
                 ciphertext,
                 nonce,
-                tag,
             }))
         }
         Err(_) => ptr::null_mut(),
@@ -167,17 +165,10 @@ pub extern "C" fn crypto_aes_gcm_decrypt(
             .to_str()
             .unwrap_or("")
     };
-    
-    let tag = unsafe {
-        CStr::from_ptr((*encrypted_data).tag)
-            .to_str()
-            .unwrap_or("")
-    };
 
     let encrypted = EncryptedData {
         ciphertext: ciphertext.to_string(),
         nonce: nonce.to_string(),
-        tag: tag.to_string(),
     };
 
     match CryptoEngine::aes_gcm_decrypt(key_slice, &encrypted) {
@@ -246,9 +237,6 @@ pub extern "C" fn crypto_free_encrypted_data(data: *mut CEncryptedData) {
             if !ed.nonce.is_null() {
                 let _ = CString::from_raw(ed.nonce);
             }
-            if !ed.tag.is_null() {
-                let _ = CString::from_raw(ed.tag);
-            }
         }
     }
 }
@@ -266,4 +254,197 @@ pub extern "C" fn crypto_free_byte_array(array: *mut CByteArray) {
 #[no_mangle]
 pub extern "C" fn crypto_get_version() -> *const c_char {
     CString::new(env!("CARGO_PKG_VERSION")).unwrap().into_raw()
+}
+
+// ==================== ECC Functions ====================
+
+#[no_mangle]
+pub extern "C" fn crypto_ecc_generate_key() -> *mut CKeyPair {
+    match EccEngine::generate_key() {
+        Ok(keypair) => {
+            let public_key = CString::new(keypair.public_key).unwrap().into_raw();
+            let private_key = CString::new(keypair.private_key).unwrap().into_raw();
+
+            let c_keypair = Box::new(CKeyPair {
+                public_key,
+                private_key,
+            });
+
+            Box::into_raw(c_keypair)
+        }
+        Err(_) => ptr::null_mut(),
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn crypto_ecc_sign(
+    message: *const u8,
+    message_len: size_t,
+    private_key: *const c_char,
+    out_len: *mut size_t,
+) -> *mut CByteArray {
+    if message.is_null() || private_key.is_null() {
+        return ptr::null_mut();
+    }
+
+    let private_key_str = unsafe { CStr::from_ptr(private_key) }
+        .to_str()
+        .unwrap_or("");
+
+    let message_slice = unsafe { slice::from_raw_parts(message, message_len) };
+
+    match EccEngine::sign_by_private_key_str(message_slice, private_key_str) {
+        Ok(signature) => {
+            let mut data = signature;
+            data.shrink_to_fit();
+            let len = data.len();
+
+            if !out_len.is_null() {
+                unsafe { *out_len = len };
+            }
+
+            let ptr = data.as_mut_ptr();
+            std::mem::forget(data);
+
+            Box::into_raw(Box::new(CByteArray { data: ptr, len }))
+        }
+        Err(_) => ptr::null_mut(),
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn crypto_ecc_verify(
+    message: *const u8,
+    message_len: size_t,
+    signature: *const u8,
+    signature_len: size_t,
+    public_key: *const c_char,
+) -> c_int {
+    if message.is_null() || signature.is_null() || public_key.is_null() {
+        return -1;
+    }
+
+    let public_key_str = unsafe { CStr::from_ptr(public_key) }
+        .to_str()
+        .unwrap_or("");
+
+    let message_slice = unsafe { slice::from_raw_parts(message, message_len) };
+    let signature_slice = unsafe { slice::from_raw_parts(signature, signature_len) };
+
+    match EccEngine::verify_sign(message_slice, signature_slice, public_key_str) {
+        Ok(is_valid) => if is_valid { 1 } else { 0 },
+        Err(_) => -1,
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn crypto_ecc_get_address(
+    public_key: *const c_char,
+    out_len: *mut size_t,
+) -> *mut CByteArray {
+    if public_key.is_null() {
+        return ptr::null_mut();
+    }
+
+    let public_key_str = unsafe { CStr::from_ptr(public_key) }
+        .to_str()
+        .unwrap_or("");
+
+    match EccEngine::get_address_by_pub_key_str(public_key_str) {
+        Ok(address) => {
+            let mut data = address;
+            data.shrink_to_fit();
+            let len = data.len();
+
+            if !out_len.is_null() {
+                unsafe { *out_len = len };
+            }
+
+            let ptr = data.as_mut_ptr();
+            std::mem::forget(data);
+
+            Box::into_raw(Box::new(CByteArray { data: ptr, len }))
+        }
+        Err(_) => ptr::null_mut(),
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn crypto_ecc_base58_encode(
+    data: *const u8,
+    data_len: size_t,
+) -> *mut c_char {
+    if data.is_null() {
+        return ptr::null_mut();
+    }
+
+    let data_slice = unsafe { slice::from_raw_parts(data, data_len) };
+    let encoded = EccEngine::base58_encode(data_slice);
+
+    CString::new(encoded).unwrap().into_raw()
+}
+
+#[no_mangle]
+pub extern "C" fn crypto_ecc_base58_decode(
+    encoded: *const c_char,
+    out_len: *mut size_t,
+) -> *mut CByteArray {
+    if encoded.is_null() {
+        return ptr::null_mut();
+    }
+
+    let encoded_str = unsafe { CStr::from_ptr(encoded) }
+        .to_str()
+        .unwrap_or("");
+
+    match EccEngine::base58_decode(encoded_str) {
+        Ok(data) => {
+            let mut data = data;
+            data.shrink_to_fit();
+            let len = data.len();
+
+            if !out_len.is_null() {
+                unsafe { *out_len = len };
+            }
+
+            let ptr = data.as_mut_ptr();
+            std::mem::forget(data);
+
+            Box::into_raw(Box::new(CByteArray { data: ptr, len }))
+        }
+        Err(_) => ptr::null_mut(),
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn crypto_ecc_get_key_by_seed_and_path(
+    seed: *const c_char,
+    path: *const c_char,
+) -> *mut CKeyPair {
+    if seed.is_null() || path.is_null() {
+        return ptr::null_mut();
+    }
+
+    let seed_str = unsafe { CStr::from_ptr(seed) }
+        .to_str()
+        .unwrap_or("");
+
+    let path_str = unsafe { CStr::from_ptr(path) }
+        .to_str()
+        .unwrap_or("");
+
+    match EccEngine::get_key_by_seed_and_path(seed_str, path_str) {
+        Ok(keypair) => {
+            let public_key = CString::new(keypair.public_key).unwrap().into_raw();
+            let private_key = CString::new(keypair.private_key).unwrap().into_raw();
+
+            let c_keypair = Box::new(CKeyPair {
+                public_key,
+                private_key,
+            });
+
+            Box::into_raw(c_keypair)
+        }
+        Err(_) => ptr::null_mut(),
+    }
 }

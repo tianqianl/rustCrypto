@@ -27,6 +27,5 @@ data class KeyPair(
 
 data class EncryptedData(
     val ciphertext: String,
-    val nonce: String,
-    val tag: String
+    val nonce: String
 )

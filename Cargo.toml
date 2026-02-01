@@ -18,6 +18,9 @@ rsa = "0.9"
 aes-gcm = "0.10"
 pkcs8 = "0.10"
 spki = "0.7"
+bitcoin = { version = "0.32", features = ["secp-recovery", "rand-std"] }
+base58 = "0.2"
+sha3 = "0.10"
 
 [build-dependencies]
 cbindgen = "0.26"

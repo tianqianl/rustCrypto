@@ -17,7 +17,6 @@ pub struct KeyPair {
 pub struct EncryptedData {
     pub ciphertext: String,
     pub nonce: String,
-    pub tag: String,
 }
 
 pub struct CryptoEngine;
@@ -75,19 +74,15 @@ impl CryptoEngine {
 
         let cipher = Aes256Gcm::new_from_slice(key)
             .map_err(|e| format!("Failed to create AES-GCM cipher: {}", e))?;
-        
+
         let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
-        
+
         let ciphertext = cipher.encrypt(&nonce, plaintext)
             .map_err(|e| format!("AES-GCM encryption failed: {}", e))?;
-        
-        let tag = ciphertext[ciphertext.len() - 16..].to_vec();
-        let ciphertext_only = ciphertext[..ciphertext.len() - 16].to_vec();
-        
+
         Ok(EncryptedData {
-            ciphertext: general_purpose::STANDARD.encode(&ciphertext_only),
+            ciphertext: general_purpose::STANDARD.encode(&ciphertext),
             nonce: general_purpose::STANDARD.encode(&nonce),
-            tag: general_purpose::STANDARD.encode(&tag),
         })
     }
 
@@ -98,21 +93,16 @@ impl CryptoEngine {
 
         let cipher = Aes256Gcm::new_from_slice(key)
             .map_err(|e| format!("Failed to create AES-GCM cipher: {}", e))?;
-        
-        let ciphertext_only = general_purpose::STANDARD.decode(&encrypted_data.ciphertext)
+
+        let ciphertext_bytes = general_purpose::STANDARD.decode(&encrypted_data.ciphertext)
             .map_err(|e| format!("Failed to decode ciphertext: {}", e))?;
-        
+
         let nonce_bytes = general_purpose::STANDARD.decode(&encrypted_data.nonce)
             .map_err(|e| format!("Failed to decode nonce: {}", e))?;
-        
-        let tag = general_purpose::STANDARD.decode(&encrypted_data.tag)
-            .map_err(|e| format!("Failed to decode tag: {}", e))?;
-        
+
         let nonce = Nonce::from_slice(&nonce_bytes);
-        let mut ciphertext_with_tag = ciphertext_only;
-        ciphertext_with_tag.extend(tag);
-        
-        let decrypted = cipher.decrypt(nonce, ciphertext_with_tag.as_ref())
+
+        let decrypted = cipher.decrypt(nonce, ciphertext_bytes.as_ref())
             .map_err(|e| format!("AES-GCM decryption failed: {}", e))?;
 
         Ok(decrypted)

@@ -22,7 +22,6 @@ typedef struct CByteArray {
 typedef struct CEncryptedData {
   char *ciphertext;
   char *nonce;
-  char *tag;
 } CEncryptedData;
 
 #ifdef __cplusplus
@@ -60,6 +59,27 @@ void crypto_free_encrypted_data(struct CEncryptedData *data);
 void crypto_free_byte_array(struct CByteArray *array);
 
 const char *crypto_get_version(void);
+
+struct CKeyPair *crypto_ecc_generate_key(void);
+
+struct CByteArray *crypto_ecc_sign(const uint8_t *message,
+                                   size_t message_len,
+                                   const char *private_key,
+                                   size_t *out_len);
+
+int crypto_ecc_verify(const uint8_t *message,
+                      size_t message_len,
+                      const uint8_t *signature,
+                      size_t signature_len,
+                      const char *public_key);
+
+struct CByteArray *crypto_ecc_get_address(const char *public_key, size_t *out_len);
+
+char *crypto_ecc_base58_encode(const uint8_t *data, size_t data_len);
+
+struct CByteArray *crypto_ecc_base58_decode(const char *encoded, size_t *out_len);
+
+struct CKeyPair *crypto_ecc_get_key_by_seed_and_path(const char *seed, const char *path);
 
 #ifdef __cplusplus
 } // extern "C"

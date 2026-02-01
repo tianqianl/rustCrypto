@@ -54,7 +54,6 @@ class ViewController: UIViewController {
             if let encryptedData = CryptoLib.aesGCMEncrypt(key: aesKey, plaintext: plaintext) {
                 output += "密文 (Base64): \(encryptedData.ciphertext)\n"
                 output += "Nonce (Base64): \(encryptedData.nonce)\n"
-                output += "Tag (Base64): \(encryptedData.tag)\n"
                 
                 if let decrypted = CryptoLib.aesGCMDecrypt(key: aesKey, encryptedData: encryptedData) {
                     output += "解密后: \(String(data: decrypted, encoding: .utf8)!)\n\n"

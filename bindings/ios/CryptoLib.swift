@@ -19,7 +19,6 @@ public class CryptoLib {
     public struct EncryptedData {
         public let ciphertext: String
         public let nonce: String
-        public let tag: String
     }
     
     // MARK: - RSA Operations
@@ -120,9 +119,8 @@ public class CryptoLib {
         
         let ciphertext = String(cString: result.pointee.ciphertext)
         let nonce = String(cString: result.pointee.nonce)
-        let tag = String(cString: result.pointee.tag)
-        
-        return EncryptedData(ciphertext: ciphertext, nonce: nonce, tag: tag)
+
+        return EncryptedData(ciphertext: ciphertext, nonce: nonce)
     }
     
     public static func aesGCMDecrypt(key: Data, encryptedData: EncryptedData) -> Data? {
@@ -131,7 +129,6 @@ public class CryptoLib {
         var cEncryptedData = CEncryptedData()
         cEncryptedData.ciphertext = UnsafeMutablePointer<Int8>(mutating: (encryptedData.ciphertext as NSString).utf8String)
         cEncryptedData.nonce = UnsafeMutablePointer<Int8>(mutating: (encryptedData.nonce as NSString).utf8String)
-        cEncryptedData.tag = UnsafeMutablePointer<Int8>(mutating: (encryptedData.tag as NSString).utf8String)
         
         var outLen: size_t = 0
         
