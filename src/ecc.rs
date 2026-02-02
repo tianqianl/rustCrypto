@@ -18,7 +18,7 @@ impl EccEngine {
         let (secret_key, public_key) = secp.generate_keypair(&mut rand::thread_rng());
 
         let private_bytes = secret_key.secret_bytes();
-        let public_bytes = public_key.serialize();
+        let public_bytes = public_key.serialize_uncompressed();
 
         Ok(EccKeyPair {
             private_key: private_bytes.to_base58(),
@@ -51,7 +51,7 @@ impl EccEngine {
 
         // Get private and public key bytes
         let private_bytes = child_key.private_key.secret_bytes();
-        let public_bytes = child_key.private_key.public_key(&secp).serialize();
+        let public_bytes = child_key.private_key.public_key(&secp).serialize_uncompressed();
 
         Ok(EccKeyPair {
             private_key: private_bytes.to_base58(),
@@ -80,15 +80,16 @@ impl EccEngine {
     }
 
     /// Sign message using private key bytes
+    /// Note: message must be a 32-byte hash, not the original message
     pub fn sign(message: &[u8], private_key: &[u8]) -> Result<Vec<u8>, String> {
         let secret_key = SecretKey::from_slice(private_key)
             .map_err(|e| format!("Invalid private key: {:?}", e))?;
 
         let secp = Secp256k1::new();
-        let mut msg_bytes = [0u8; 32];
-        let len = std::cmp::min(message.len(), 32);
-        msg_bytes[..len].copy_from_slice(&message[..len]);
-        let msg = Message::from_digest(msg_bytes);
+        
+        // message is expected to be a 32-byte hash (digest)
+        let msg = Message::from_digest(message.try_into()
+            .map_err(|_| "message must be exactly 32 bytes".to_string())?);
 
         let signature = secp.sign_ecdsa(&msg, &secret_key);
 
@@ -129,10 +130,10 @@ impl EccEngine {
         let verifying_key = Self::unmarshal_public_key(public_key)?;
 
         let secp = Secp256k1::new();
-        let mut msg_bytes = [0u8; 32];
-        let len = std::cmp::min(message.len(), 32);
-        msg_bytes[..len].copy_from_slice(&message[..len]);
-        let msg = Message::from_digest(msg_bytes);
+        
+        // message is expected to be a 32-byte hash (digest)
+        let msg = Message::from_digest(message.try_into()
+            .map_err(|_| "message must be exactly 32 bytes".to_string())?);
 
         let signature = Signature::from_der(signature)
             .map_err(|e| format!("Invalid signature format: {:?}", e))?;
@@ -351,4 +352,14 @@ mod tests {
             assert!(is_valid, "路径 {} 的签名验证应该成功", i);
         }
     }
+}
+
+#[test]
+fn test_public_key_length() {
+    let keypair = EccEngine::generate_key().unwrap();
+    let public_key_bytes = keypair.public_key.from_base58().unwrap();
+    println!("公钥长度: {} 字节", public_key_bytes.len());
+    println!("公钥第一个字节: 0x{:02x}", public_key_bytes[0]);
+    assert_eq!(public_key_bytes.len(), 65, "公钥应该是65字节（未压缩格式）");
+    assert_eq!(public_key_bytes[0], 0x04, "公钥第一个字节应该是0x04（未压缩格式）");
 }
