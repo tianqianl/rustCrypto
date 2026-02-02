@@ -1,20 +1,20 @@
 package main
 
 import (
+	crypto2 "crypto"
 	"crypto/ecdsa"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/asn1"
 	"encoding/hex"
 	"fmt"
-	"math/big"
-	"os"
-	"unsafe"
-	crypto2 "crypto"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcutil/base58"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/miguelmota/go-ethereum-hdwallet"
+	"math/big"
+	"os"
+	"unsafe"
 )
 
 /*
@@ -97,7 +97,7 @@ func VerifySign(message, signature []byte, pubKeyStr string) (bool, error) {
 
 	// message 参数已经是 32 字节的哈希值，直接验证
 	result := ecdsa.Verify(pubKey, message, esig.R, esig.S)
-	
+
 	return result, nil
 }
 
@@ -298,6 +298,39 @@ func testGetKeyBySeedAndPath() bool {
 	fmt.Printf("  ✓ Rust 私钥 (Base58): %s\n", rustPriKey)
 	fmt.Printf("  ✓ Rust 公钥 (Base58): %s\n", rustPubKey)
 
+	// 添加调试：对比 Go 在每个派生层级的私钥
+	fmt.Println("  [调试] Go 派生过程对比:")
+	wallet, _ := hdwallet.NewFromSeed([]byte(seed))
+	paths := []string{"m/44'", "m/44'/60'", "m/44'/60'/0'", "m/44'/60'/0'/0", "m/44'/60'/0'/0/0"}
+	for _, p := range paths {
+		derivationPath := hdwallet.MustParseDerivationPath(p)
+		account, _ := wallet.Derive(derivationPath, false)
+		pubKey, _ := wallet.PublicKeyBytes(account)
+		priKey, _ := wallet.PrivateKeyBytes(account)
+		fmt.Printf("    %s: %s\n", p, base58.Encode(priKey))
+		fmt.Printf("    %s: %s\n", p, base58.Encode(pubKey))
+	}
+
+	fmt.Println("  [调试] Rust 派生过程对比:")
+	for _, p := range paths {
+		cSeed2 := C.CString(seed)
+		defer C.free(unsafe.Pointer(cSeed2))
+		cPath2 := C.CString(p)
+		defer C.free(unsafe.Pointer(cPath2))
+
+		rustKeyPair2 := C.crypto_ecc_get_key_by_seed_and_path(cSeed2, cPath2)
+		if rustKeyPair2 == nil {
+			fmt.Println("  ❌ Rust 生成密钥失败")
+			return false
+		}
+		defer C.crypto_free_keypair(rustKeyPair2)
+
+		rustPriKey2 := C.GoString(rustKeyPair2.private_key)
+		rustPubKey2 := C.GoString(rustKeyPair2.public_key)
+		fmt.Printf("    %s: %s\n", p, rustPriKey2)
+		fmt.Printf("    %s: %s\n", p, rustPubKey2)
+	}
+
 	// 验证 Go 和 Rust 生成的密钥应该相同
 	fmt.Println("  [验证] 对比 Go 和 Rust 生成的密钥")
 	if goPriKey != rustPriKey || goPubKey != rustPubKey {
@@ -317,7 +350,7 @@ func testGetKeyBySeedAndPath() bool {
 func testSignAndVerify() bool {
 	message := []byte("Hello, Rust ECC FFI!")
 	fmt.Printf("  测试消息: %s\n", string(message))
-	
+
 	// 对消息进行 SHA256 哈希
 	hash := sha256.Sum256(message)
 	fmt.Printf("  消息哈希: %s\n", hex.EncodeToString(hash[:]))

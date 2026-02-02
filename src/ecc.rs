@@ -32,13 +32,11 @@ impl EccEngine {
     pub fn get_key_by_seed_and_path(seed: &str, path: &str) -> Result<EccKeyPair, String> {
         let secp = Secp256k1::new();
 
-        // Create seed hash
-        let mut hasher = Keccak256::new();
-        hasher.update(seed.as_bytes());
-        let seed_hash = hasher.finalize();
+        // Use seed bytes directly (same as Go's hdwallet.NewFromSeed)
+        let seed_bytes = seed.as_bytes();
 
         // Create master key from seed
-        let master_key = Xpriv::new_master(bitcoin::Network::Bitcoin, &seed_hash)
+        let master_key = Xpriv::new_master(bitcoin::Network::Bitcoin, seed_bytes)
             .map_err(|e| format!("Failed to create master key: {:?}", e))?;
 
         // Parse derivation path
