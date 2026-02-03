@@ -1,6 +1,6 @@
 use bitcoin::secp256k1::{Secp256k1, PublicKey, SecretKey, Message, ecdsa::Signature};
 use bitcoin::bip32::{Xpriv, DerivationPath};
-use base58::{FromBase58, ToBase58};
+use bs58;
 use sha3::{Digest, Keccak256};
 
 #[derive(Debug, Clone)]
@@ -21,8 +21,8 @@ impl EccEngine {
         let public_bytes = public_key.serialize_uncompressed();
 
         Ok(EccKeyPair {
-            private_key: private_bytes.to_base58(),
-            public_key: public_bytes.to_base58(),
+            private_key: bs58::encode(private_bytes).into_string(),
+            public_key: bs58::encode(public_bytes).into_string(),
         })
     }
 
@@ -52,14 +52,14 @@ impl EccEngine {
         let public_bytes = child_key.private_key.public_key(&secp).serialize_uncompressed();
 
         Ok(EccKeyPair {
-            private_key: private_bytes.to_base58(),
-            public_key: public_bytes.to_base58(),
+            private_key: bs58::encode(private_bytes).into_string(),
+            public_key: bs58::encode(public_bytes).into_string(),
         })
     }
 
     /// Unmarshal private key from Base58 string
     pub fn unmarshal_private_key(key: &str) -> Result<[u8; 32], String> {
-        let decoded = key.from_base58()
+        let decoded = bs58::decode(key).into_vec()
             .map_err(|e| format!("Failed to decode Base58: {:?}", e))?;
 
         if decoded.len() != 32 {
@@ -97,7 +97,7 @@ impl EccEngine {
 
     /// Unmarshal public key from Base58 string
     pub fn unmarshal_public_key(public_key: &str) -> Result<PublicKey, String> {
-        let decoded = public_key.from_base58()
+        let decoded = bs58::decode(public_key).into_vec()
             .map_err(|e| format!("Failed to decode Base58: {:?}", e))?;
 
         PublicKey::from_slice(&decoded)
@@ -141,12 +141,12 @@ impl EccEngine {
 
     /// Base58 encode
     pub fn base58_encode(data: &[u8]) -> String {
-        data.to_base58()
+        bs58::encode(data).into_string()
     }
 
     /// Base58 decode
     pub fn base58_decode(encoded: &str) -> Result<Vec<u8>, String> {
-        encoded.from_base58()
+        bs58::decode(encoded).into_vec()
             .map_err(|e| format!("Base58 decode failed: {:?}", e))
     }
 }
@@ -355,7 +355,7 @@ mod tests {
 #[test]
 fn test_public_key_length() {
     let keypair = EccEngine::generate_key().unwrap();
-    let public_key_bytes = keypair.public_key.from_base58().unwrap();
+    let public_key_bytes = bs58::decode(keypair.public_key).into_vec().unwrap();
     println!("公钥长度: {} 字节", public_key_bytes.len());
     println!("公钥第一个字节: 0x{:02x}", public_key_bytes[0]);
     assert_eq!(public_key_bytes.len(), 65, "公钥应该是65字节（未压缩格式）");

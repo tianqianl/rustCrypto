@@ -1,4 +1,4 @@
-module github.com/tianqianl/rustCrypto/bindings/go-example
+module go-example
 
 go 1.24.11
 

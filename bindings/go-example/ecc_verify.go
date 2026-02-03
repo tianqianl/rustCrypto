@@ -12,22 +12,10 @@ import (
 	"github.com/btcsuite/btcutil/base58"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/miguelmota/go-ethereum-hdwallet"
+	cryptolib "go-example/crypto"
 	"math/big"
 	"os"
-	"unsafe"
 )
-
-/*
-#cgo windows LDFLAGS: -L./crypto -lcrypto_lib -lbcrypt -lntdll -ladvapi32 -lws2_32 -luserenv
-#cgo darwin,amd64 LDFLAGS: -L./crypto -lcrypto_lib -Wl,-rpath,./crypto
-#cgo darwin,arm64 LDFLAGS: -L./crypto -lcrypto_lib -Wl,-rpath,./crypto
-#cgo linux LDFLAGS: -L./crypto -lcrypto_lib
-#cgo CFLAGS: -I./crypto
-
-#include "crypto.h"
-#include <stdlib.h>
-*/
-import "C"
 
 // 辅助函数：生成 ECC 密钥对
 func GenerateKey() (string, string, error) {
@@ -211,15 +199,14 @@ func testGenerateKey() bool {
 	}
 
 	fmt.Println("  [Rust 实现] 生成密钥对")
-	rustKeyPair := C.crypto_ecc_generate_key()
-	if rustKeyPair == nil {
-		fmt.Println("  ❌ Rust 生成密钥对失败")
+	rustKeyPair, err := cryptolib.ECCGenerateKey()
+	if err != nil {
+		fmt.Printf("  ❌ Rust 生成密钥对失败: %v\n", err)
 		return false
 	}
-	defer C.crypto_free_keypair(rustKeyPair)
 
-	rustPriKey := C.GoString(rustKeyPair.private_key)
-	rustPubKey := C.GoString(rustKeyPair.public_key)
+	rustPriKey := rustKeyPair.PrivateKey
+	rustPubKey := rustKeyPair.PublicKey
 	fmt.Printf("  ✓ Rust 私钥 (Base58): %s\n", rustPriKey)
 	fmt.Printf("  ✓ Rust 公钥 (Base58): %s\n", rustPubKey)
 
@@ -281,20 +268,14 @@ func testGetKeyBySeedAndPath() bool {
 	fmt.Printf("  ✓ Go 公钥 (Base58): %s\n", goPubKey)
 
 	fmt.Println("  [Rust 实现] 通过种子和路径生成密钥...")
-	cSeed := C.CString(seed)
-	defer C.free(unsafe.Pointer(cSeed))
-	cPath := C.CString(path)
-	defer C.free(unsafe.Pointer(cPath))
-
-	rustKeyPair := C.crypto_ecc_get_key_by_seed_and_path(cSeed, cPath)
-	if rustKeyPair == nil {
-		fmt.Println("  ❌ Rust 生成密钥失败")
+	rustKeyPair, err := cryptolib.ECCGetKeyBySeedAndPath(seed, path)
+	if err != nil {
+		fmt.Printf("  ❌ Rust 生成密钥失败: %v\n", err)
 		return false
 	}
-	defer C.crypto_free_keypair(rustKeyPair)
 
-	rustPriKey := C.GoString(rustKeyPair.private_key)
-	rustPubKey := C.GoString(rustKeyPair.public_key)
+	rustPriKey := rustKeyPair.PrivateKey
+	rustPubKey := rustKeyPair.PublicKey
 	fmt.Printf("  ✓ Rust 私钥 (Base58): %s\n", rustPriKey)
 	fmt.Printf("  ✓ Rust 公钥 (Base58): %s\n", rustPubKey)
 
@@ -313,20 +294,14 @@ func testGetKeyBySeedAndPath() bool {
 
 	fmt.Println("  [调试] Rust 派生过程对比:")
 	for _, p := range paths {
-		cSeed2 := C.CString(seed)
-		defer C.free(unsafe.Pointer(cSeed2))
-		cPath2 := C.CString(p)
-		defer C.free(unsafe.Pointer(cPath2))
-
-		rustKeyPair2 := C.crypto_ecc_get_key_by_seed_and_path(cSeed2, cPath2)
-		if rustKeyPair2 == nil {
-			fmt.Println("  ❌ Rust 生成密钥失败")
+		rustKeyPair2, err := cryptolib.ECCGetKeyBySeedAndPath(seed, p)
+		if err != nil {
+			fmt.Printf("  ❌ Rust 生成密钥失败: %v\n", err)
 			return false
 		}
-		defer C.crypto_free_keypair(rustKeyPair2)
 
-		rustPriKey2 := C.GoString(rustKeyPair2.private_key)
-		rustPubKey2 := C.GoString(rustKeyPair2.public_key)
+		rustPriKey2 := rustKeyPair2.PrivateKey
+		rustPubKey2 := rustKeyPair2.PublicKey
 		fmt.Printf("    %s: %s\n", p, rustPriKey2)
 		fmt.Printf("    %s: %s\n", p, rustPubKey2)
 	}
@@ -357,45 +332,34 @@ func testSignAndVerify() bool {
 
 	// 使用 Rust 生成的密钥进行签名
 	fmt.Println("  [Rust 实现] 生成密钥对")
-	rustKeyPair := C.crypto_ecc_generate_key()
-	if rustKeyPair == nil {
-		fmt.Println("  ❌ Rust 生成密钥对失败")
+	rustKeyPair, err := cryptolib.ECCGenerateKey()
+	if err != nil {
+		fmt.Printf("  ❌ Rust 生成密钥对失败: %v\n", err)
 		return false
 	}
-	defer C.crypto_free_keypair(rustKeyPair)
 
-	rustPriKey := C.GoString(rustKeyPair.private_key)
-	rustPubKey := C.GoString(rustKeyPair.public_key)
+	rustPriKey := rustKeyPair.PrivateKey
+	rustPubKey := rustKeyPair.PublicKey
 
 	// Rust 签名 - 传入哈希值而不是原始消息
 	fmt.Println("  [Rust 实现] 签名")
-	var rustSigLen C.size_t
-	rustSig := C.crypto_ecc_sign(
-		(*C.uchar)(unsafe.Pointer(&hash[0])),
-		C.size_t(len(hash)),
-		C.CString(rustPriKey),
-		&rustSigLen,
-	)
-	if rustSig == nil {
-		fmt.Println("  ❌ Rust 签名失败")
+	rustSig, err := cryptolib.ECCSign(hash[:], rustPriKey)
+	if err != nil {
+		fmt.Printf("  ❌ Rust 签名失败: %v\n", err)
 		return false
 	}
-	defer C.crypto_free_byte_array(rustSig)
 
-	rustSigBytes := C.GoBytes(unsafe.Pointer(rustSig.data), C.int(rustSigLen))
-	fmt.Printf("  ✓ Rust 签名长度: %d 字节\n", len(rustSigBytes))
-	fmt.Printf("  ✓ Rust 签名 (hex): %s\n", hex.EncodeToString(rustSigBytes)[:40])
+	fmt.Printf("  ✓ Rust 签名长度: %d 字节\n", len(rustSig))
+	fmt.Printf("  ✓ Rust 签名 (hex): %s\n", hex.EncodeToString(rustSig)[:40])
 
 	// Rust 验证 - 传入哈希值而不是原始消息
 	fmt.Println("  [Rust 实现] 验证签名...")
-	verifyResult := C.crypto_ecc_verify(
-		(*C.uchar)(unsafe.Pointer(&hash[0])),
-		C.size_t(len(hash)),
-		(*C.uchar)(unsafe.Pointer(&rustSigBytes[0])),
-		C.size_t(len(rustSigBytes)),
-		C.CString(rustPubKey),
-	)
-	if verifyResult != 1 {
+	verifyResult, err := cryptolib.ECCVerify(hash[:], rustSig, rustPubKey)
+	if err != nil {
+		fmt.Printf("  ❌ Rust 验证签名失败: %v\n", err)
+		return false
+	}
+	if !verifyResult {
 		fmt.Println("  ❌ Rust 验证签名失败")
 		return false
 	}
@@ -403,7 +367,7 @@ func testSignAndVerify() bool {
 
 	// 使用 Go 实现验证 Rust 的签名 - 传入哈希值
 	fmt.Println("  [Go 实现] 验证 Rust 的签名")
-	verified, err := VerifySign(hash[:], rustSigBytes, rustPubKey)
+	verified, err := VerifySign(hash[:], rustSig, rustPubKey)
 	if err != nil {
 		fmt.Printf("  ❌ Go 验证签名失败: %v\n", err)
 		return false
@@ -435,23 +399,20 @@ func testGetAddress() bool {
 	fmt.Printf("  ✓ Go 地址 (hex): 0x%s\n", hex.EncodeToString(goAddr))
 
 	fmt.Println("  [Rust 实现] 获取地址")
-	var rustAddrLen C.size_t
-	rustAddr := C.crypto_ecc_get_address(C.CString(goPubKey), &rustAddrLen)
-	if rustAddr == nil {
-		fmt.Println("  ❌ Rust 获取地址失败")
+	rustAddr, err := cryptolib.ECCGetAddress(goPubKey)
+	if err != nil {
+		fmt.Printf("  ❌ Rust 获取地址失败: %v\n", err)
 		return false
 	}
-	defer C.crypto_free_byte_array(rustAddr)
 
-	rustAddrBytes := C.GoBytes(unsafe.Pointer(rustAddr.data), C.int(rustAddrLen))
-	fmt.Printf("  ✓ Rust 地址 (hex): 0x%s\n", hex.EncodeToString(rustAddrBytes))
+	fmt.Printf("  ✓ Rust 地址 (hex): 0x%s\n", hex.EncodeToString(rustAddr))
 
 	// 验证地址是否一致
 	fmt.Println("  [验证] 对比地址")
-	if hex.EncodeToString(goAddr) != hex.EncodeToString(rustAddrBytes) {
+	if hex.EncodeToString(goAddr) != hex.EncodeToString(rustAddr) {
 		fmt.Println("  ❌ Go 和 Rust 地址不一致")
 		fmt.Printf("     Go 地址: 0x%s\n", hex.EncodeToString(goAddr))
-		fmt.Printf("     Rust 地址: 0x%s\n", hex.EncodeToString(rustAddrBytes))
+		fmt.Printf("     Rust 地址: 0x%s\n", hex.EncodeToString(rustAddr))
 		return false
 	}
 	fmt.Println("  ✓ Go 和 Rust 地址一致")
@@ -466,25 +427,17 @@ func testBase58() bool {
 
 	// Rust 编码
 	fmt.Println("  [Rust 实现] Base58 编码")
-	rustEncoded := C.crypto_ecc_base58_encode(
-		(*C.uchar)(unsafe.Pointer(&testData[0])),
-		C.size_t(len(testData)),
-	)
-	defer C.free(unsafe.Pointer(rustEncoded))
-	rustEncodedStr := C.GoString(rustEncoded)
+	rustEncodedStr := cryptolib.ECCBase58Encode(testData)
 	fmt.Printf("  ✓ Rust 编码: %s\n", rustEncodedStr)
 
 	// Rust 解码
 	fmt.Println("  [Rust 实现] Base58 解码")
-	var rustDecodedLen C.size_t
-	rustDecoded := C.crypto_ecc_base58_decode(C.CString(rustEncodedStr), &rustDecodedLen)
-	if rustDecoded == nil {
-		fmt.Println("  ❌ Rust 解码失败")
+	rustDecodedBytes, err := cryptolib.ECCBase58Decode(rustEncodedStr)
+	if err != nil {
+		fmt.Printf("  ❌ Rust 解码失败: %v\n", err)
 		return false
 	}
-	defer C.crypto_free_byte_array(rustDecoded)
 
-	rustDecodedBytes := C.GoBytes(unsafe.Pointer(rustDecoded.data), C.int(rustDecodedLen))
 	fmt.Printf("  ✓ Rust 解码: %s\n", string(rustDecodedBytes))
 
 	// 验证编码/解码
